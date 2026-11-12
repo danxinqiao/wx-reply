@@ -1,143 +1,119 @@
-import { textReply, verifySignature, xmlField } from './wechat';
-import type { Env, WxContext } from './types';
+import { handle20 } from './commands20';
+import { DEFAULT_TIMEOUT_MS, errorMessage, fetchWithTimeout, json, text, xml } from './http';
+import { classify } from './route';
+import type { Env, IncomingMessage } from './types';
+import { buildTextReply, parseMessage, verifySignature } from './wechat';
 
-const HINT = '回复 101 看涨 · 102 看跌 · 103 看平';
-const NOT_OPEN = '该指令暂未开放';
-
-/** 转发到 Pages /api/wx/callback（业务层），返回 reply 文案或 null。 */
-async function callBusiness(
-  env: Env,
-  body: Record<string, string>,
-): Promise<string | null> {
-  const response = await fetch(env.PAGES_WX_URL, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Cron-Token': env.CRON_SECRET,
-    },
-    body: JSON.stringify(body),
-    signal: AbortSignal.timeout(4000),
-  });
-
-  if (!response.ok) {
-    console.error(`[wx-reply] business ${response.status}: ${(await response.text()).slice(0, 300)}`);
-    return null;
-  }
-
-  const data = (await response.json()) as { reply?: string | null };
-  return data.reply ?? null;
-}
-
-function replyXml(ctx: WxContext, reply: string): Response {
-  return new Response(textReply(ctx.openid, ctx.account, reply), {
-    status: 200,
-    headers: { 'Content-Type': 'application/xml; charset=utf-8' },
-  });
-}
-
-function success(): Response {
-  return new Response('success', { status: 200 });
-}
+const HINT = '回复 101 看涨；102 看跌；103 看平；201 dsh';
 
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
+  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname.replace(/\/+$/, '') !== '/wx') {
-      return new Response('Not Found', { status: 404 });
-    }
+    if (url.pathname !== '/wx') return json({ error: 'not found' }, 404);
 
     const signature = url.searchParams.get('signature');
     const timestamp = url.searchParams.get('timestamp');
     const nonce = url.searchParams.get('nonce');
 
-    // GET：微信后台「服务器配置」保存时的验证
+    if (!(await verifySignature(env.WX_TOKEN, signature, timestamp, nonce))) {
+      return json({ error: 'signature mismatch' }, 403);
+    }
+
     if (request.method === 'GET') {
       const echostr = url.searchParams.get('echostr');
-      if (!signature || !timestamp || !nonce || !echostr) {
-        return new Response('signature mismatch', { status: 403 });
+      if (!echostr) return json({ error: 'missing echostr' }, 403);
+      return text(echostr);
+    }
+
+    if (request.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+
+    const message = parseMessage(await request.text());
+
+    if (message.msgType === 'event') {
+      if (message.event === 'subscribe') {
+        await forward(env, { type: 'subscribe', openid: message.fromUser }).catch((error) => {
+          console.error('[wx] subscribe forward failed', errorMessage(error));
+        });
       }
-      const ok = await verifySignature(env.WX_TOKEN, timestamp, nonce, signature);
-      if (!ok) {
-        console.error('[wx-reply] get signature mismatch');
-        return new Response('signature mismatch', { status: 403 });
+      return text('success');
+    }
+
+    if (message.msgType !== 'text') return text('success');
+
+    const route = classify(message.content);
+
+    if (route.kind === 'pages') {
+      try {
+        const data = await forward(env, {
+          type: 'text',
+          openid: message.fromUser,
+          content: message.content,
+        });
+        return replyOrSuccess(message, data.reply);
+      } catch (error) {
+        console.error('[wx] pages forward failed', errorMessage(error));
+        return text('success');
       }
-      console.log('[wx-reply] url verified');
-      return new Response(echostr, {
-        status: 200,
-        headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    }
+
+    if (route.kind === 'local20') {
+      const reply = await handle20({
+        env,
+        fromUser: message.fromUser,
+        content: message.content,
+        ctx,
       });
+      return xml(buildTextReply(message.fromUser, message.toUser, reply));
     }
 
-    if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405 });
-    }
-
-    // POST：微信推送的用户消息
-    if (!signature || !timestamp || !nonce) {
-      return new Response('missing signature', { status: 403 });
-    }
-    const ok = await verifySignature(env.WX_TOKEN, timestamp, nonce, signature);
-    if (!ok) {
-      console.error('[wx-reply] post signature mismatch');
-      return new Response('signature mismatch', { status: 403 });
-    }
-
-    const xml = await request.text();
-    const msgType = xmlField(xml, 'MsgType');
-    const openid = xmlField(xml, 'FromUserName') ?? '';
-    const account = xmlField(xml, 'ToUserName') ?? '';
-
-    // 事件：subscribe 抓 openid，其余忽略
-    if (msgType === 'event') {
-      if (xmlField(xml, 'Event') === 'subscribe' && openid) {
-        console.log(`[wx-reply] subscribe from ${openid}`);
-        const reply = await callBusiness(env, { type: 'subscribe', openid });
-        return reply ? replyXml({ openid, account, content: '' }, reply) : success();
-      }
-      return success();
-    }
-
-    // 非文本消息：忽略
-    if (msgType !== 'text') {
-      return success();
-    }
-
-    const content = xmlField(xml, 'Content') ?? '';
-    const ctx: WxContext = { openid, account, content };
-
-    // 无匹配前缀：提示语
-    if (!/^(10|20|30)/.test(content)) {
-      return replyXml(ctx, HINT);
-    }
-
-    try {
-      if (content.startsWith('10')) {
-        const reply = await callBusiness(env, { type: 'text', openid, content });
-        return reply ? replyXml(ctx, reply) : success();
-      }
-
-      if (content.startsWith('20')) {
-        if (!env.RESERVED_20_URL) {
-          return replyXml(ctx, NOT_OPEN);
-        }
-        const reply = await callBusiness(
-          { ...env, PAGES_WX_URL: env.RESERVED_20_URL },
-          { type: 'text', openid, content },
-        );
-        return reply ? replyXml(ctx, reply) : success();
-      }
-
+    if (route.kind === 'reserved30') {
       if (!env.RESERVED_30_URL) {
-        return replyXml(ctx, NOT_OPEN);
+        return xml(buildTextReply(message.fromUser, message.toUser, '该指令暂未开放'));
       }
-      const reply = await callBusiness(
-        { ...env, PAGES_WX_URL: env.RESERVED_30_URL },
-        { type: 'text', openid, content },
-      );
-      return reply ? replyXml(ctx, reply) : success();
-    } catch (error) {
-      console.error('[wx-reply] failed:', error);
-      return success();
+      try {
+        const data = await forwardTo(env.RESERVED_30_URL, env.CRON_SECRET, {
+          type: 'text',
+          openid: message.fromUser,
+          content: message.content,
+        });
+        return replyOrSuccess(message, data.reply);
+      } catch (error) {
+        console.error('[wx] reserved30 forward failed', errorMessage(error));
+        return text('success');
+      }
     }
+
+    return xml(buildTextReply(message.fromUser, message.toUser, HINT));
   },
-};
+} satisfies ExportedHandler<Env>;
+
+interface ForwardReply {
+  reply?: string | null;
+}
+
+function forward(env: Env, payload: unknown): Promise<ForwardReply> {
+  return forwardTo(env.PAGES_WX_URL, env.CRON_SECRET, payload);
+}
+
+async function forwardTo(target: string, token: string, payload: unknown): Promise<ForwardReply> {
+  const response = await fetchWithTimeout(
+    target,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Cron-Token': token,
+      },
+      body: JSON.stringify(payload),
+    },
+    DEFAULT_TIMEOUT_MS,
+  );
+
+  if (!response.ok) throw new Error(`http ${response.status}`);
+  return (await response.json().catch(() => ({}))) as ForwardReply;
+}
+
+function replyOrSuccess(message: IncomingMessage, reply: string | null | undefined): Response {
+  if (!reply) return text('success');
+  return xml(buildTextReply(message.fromUser, message.toUser, reply));
+}

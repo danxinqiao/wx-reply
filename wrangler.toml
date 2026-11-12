@@ -1,23 +1,19 @@
-name = "wx-reply"                 # 自定义 Worker 名称
-main = "src/index.ts"             # 入口文件路径（相对项目根）
-compatibility_date = "2026-07-11" # 日期可改为当前
-
-# 自定义域名在 Cloudflare 面板绑定：
-#   Workers & Pages -> wx-reply -> Settings -> Domains & Routes
-#   -> Custom Domains -> 加 wx.gyegt614.top（自动建记录和证书）
+name = "wx-reply"
+main = "src/index.ts"
+compatibility_date = "2026-11-12"
 
 [vars]
-# 10xxx 指令的转发目标（Pages 业务层）
 PAGES_WX_URL = "https://stock.gyegt614.top/api/wx/callback"
-
-# 20xxx / 30xxx 预留目标：暂不配置（留空 = 回复「该指令暂未开放」）
-# 以后启用时填上 URL 即可，代码不用改
-RESERVED_20_URL = ""
+WX_PUSH_URL = "https://hpbnvpiosrzhgyxbrwpt.supabase.co/functions/v1/wx-push"
+UPSTASH_REDIS_REST_URL = "https://supreme-mackerel-128896.upstash.io"
+GITHUB_REPO = "danxinqiao/dsh-runner"
+WORKFLOW_ID = "dsh-agent.yml"
+GITHUB_REF = "main"
 RESERVED_30_URL = ""
 
-# secret 两个，用 wrangler secret put 配置（不要写在这里）：
-#   wrangler secret put WX_TOKEN      微信服务器配置里的 Token
-#   wrangler secret put CRON_SECRET   调 Pages 内部接口的凭证，与 Pages 的 CRON_SECRET 同值
+[[routes]]
+pattern = "wx.gyegt614.top"
+custom_domain = true
 
 [observability.logs]
 enabled = true

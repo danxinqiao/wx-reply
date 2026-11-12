@@ -1,0 +1,7 @@
+# 本地开发用（wrangler dev 会读取），不要提交
+WX_TOKEN=replace_me
+CRON_SECRET=replace_me
+GITHUB_TOKEN_FLOW=replace_me
+WX_PUSH_TOKEN=replace_me
+UPSTASH_REDIS_REST_URL=https://example.upstash.io
+UPSTASH_REDIS_REST_TOKEN=replace_me

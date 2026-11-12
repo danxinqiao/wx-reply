@@ -1,41 +1,61 @@
-/** sha1(sorted([token, timestamp, nonce]).join('')) === signature（微信官方验签算法） */
-export async function verifySignature(
-  token: string,
-  timestamp: string,
-  nonce: string,
-  signature: string,
-): Promise<boolean> {
-  const raw = [token, timestamp, nonce].sort().join('');
-  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(raw));
-  const hex = Array.from(new Uint8Array(digest))
+import type { IncomingMessage } from './types';
+
+export async function sha1Hex(input: string): Promise<string> {
+  const digest = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(input));
+  return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, '0'))
     .join('');
-  return hex === signature.toLowerCase();
 }
 
-/** 从明文 XML 里取一个字段，兼容 CDATA。 */
-export function xmlField(xml: string, tag: string): string | null {
-  const pattern = new RegExp(
-    `<${tag}>\\s*(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))\\s*</${tag}>`,
-  );
-  const match = xml.match(pattern);
-  if (!match) return null;
+export async function verifySignature(
+  token: string,
+  signature: string | null,
+  timestamp: string | null,
+  nonce: string | null,
+): Promise<boolean> {
+  if (!signature || !timestamp || !nonce) return false;
+  const expected = await sha1Hex([token, timestamp, nonce].sort().join(''));
+  return timingSafeEqual(expected, signature.toLowerCase());
+}
+
+function timingSafeEqual(left: string, right: string): boolean {
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left.charCodeAt(i) ^ right.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+export function parseMessage(xml: string): IncomingMessage {
+  return {
+    toUser: extractTag(xml, 'ToUserName'),
+    fromUser: extractTag(xml, 'FromUserName'),
+    msgType: extractTag(xml, 'MsgType').toLowerCase(),
+    content: extractTag(xml, 'Content'),
+    event: extractTag(xml, 'Event').toLowerCase(),
+  };
+}
+
+function extractTag(xml: string, tag: string): string {
+  const re = new RegExp(`<${tag}>\\s*(?:<!\\[CDATA\\[([\\s\\S]*?)\\]\\]>|([\\s\\S]*?))\\s*</${tag}>`);
+  const match = re.exec(xml);
+  if (!match) return '';
   return (match[1] ?? match[2] ?? '').trim();
 }
 
-/** 被动回复文本消息（明文模式）。fromUser=用户 openid，toUser=公众号原始 id。 */
-export function textReply(
-  toUser: string,
-  fromUser: string,
-  content: string,
-): string {
+export function buildTextReply(toUser: string, fromUser: string, content: string): string {
   return [
     '<xml>',
-    `<ToUserName><![CDATA[${toUser}]]></ToUserName>`,
-    `<FromUserName><![CDATA[${fromUser}]]></FromUserName>`,
+    `<ToUserName><![CDATA[${cdata(toUser)}]]></ToUserName>`,
+    `<FromUserName><![CDATA[${cdata(fromUser)}]]></FromUserName>`,
     `<CreateTime>${Math.floor(Date.now() / 1000)}</CreateTime>`,
     '<MsgType><![CDATA[text]]></MsgType>',
-    `<Content><![CDATA[${content}]]></Content>`,
+    `<Content><![CDATA[${cdata(content)}]]></Content>`,
     '</xml>',
   ].join('');
+}
+
+function cdata(value: string): string {
+  return value.replace(/]]>/g, ']]]]><![CDATA[>');
 }
