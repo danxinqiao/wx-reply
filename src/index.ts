@@ -12,7 +12,9 @@ const HINT = '回复 101 看涨；102 看跌；103 看平；201 dsh';
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
-    if (url.pathname !== '/wx') return json({ error: 'not found' }, 404);
+    if (url.pathname !== '/wx' && url.pathname !== '/alarm-status') {
+      return json({ error: 'not found' }, 404);
+    }
 
     const signature = url.searchParams.get('signature');
     const timestamp = url.searchParams.get('timestamp');
@@ -23,6 +25,11 @@ export default {
     }
 
     if (request.method === 'GET') {
+      if (url.pathname === '/alarm-status') {
+        const stub = env.TASK_SCHEDULER.get(env.TASK_SCHEDULER.idFromName('dsh-task'));
+        const info = await stub.getAlarmInfo();
+        return json({ ...info, now: Date.now() });
+      }
       const echostr = url.searchParams.get('echostr');
       if (!echostr) return json({ error: 'missing echostr' }, 403);
       return text(echostr);

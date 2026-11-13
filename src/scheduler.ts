@@ -34,20 +34,32 @@ export class TaskScheduler extends DurableObject<Env> {
     const countdown = await readCountdownSeconds(this.env);
     const scheduledAt = Date.now();
     await this.ctx.storage.put('task', { openid, scheduledAt });
-    await this.ctx.storage.setAlarm(scheduledAt + countdown * 1000);
+    const alarmAt = scheduledAt + countdown * 1000;
+    await this.ctx.storage.setAlarm(alarmAt);
+    console.log('[scheduler] scheduled', { openid, countdown, scheduledAt, alarmAt });
   }
 
   async alarm(): Promise<void> {
     const task = await this.ctx.storage.get<StoredTask>('task');
+    console.log('[scheduler] alarm fired', { task });
     if (!task) return;
 
     try {
       const message = await buildReminderMessage(this.env);
       await pushTaskCreated(this.env, task.openid, message);
+      console.log('[scheduler] reminder pushed', { openid: task.openid, message });
     } catch (error) {
       console.error('[scheduler] reminder push failed', errorMessage(error));
     } finally {
       await this.ctx.storage.delete('task');
     }
+  }
+
+  async getAlarmInfo(): Promise<{ alarmAt: number | null; hasTask: boolean }> {
+    const [alarmAt, task] = await Promise.all([
+      this.ctx.storage.getAlarm(),
+      this.ctx.storage.get<StoredTask>('task'),
+    ]);
+    return { alarmAt, hasTask: Boolean(task) };
   }
 }
