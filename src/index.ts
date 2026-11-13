@@ -1,8 +1,11 @@
 import { handle20 } from './commands20';
 import { DEFAULT_TIMEOUT_MS, errorMessage, fetchWithTimeout, json, text, xml } from './http';
 import { classify } from './route';
+import { TaskScheduler } from './scheduler';
 import type { Env, IncomingMessage } from './types';
 import { buildTextReply, parseMessage, verifySignature } from './wechat';
+
+export { TaskScheduler };
 
 const HINT = '回复 101 看涨；102 看跌；103 看平；201 dsh';
 

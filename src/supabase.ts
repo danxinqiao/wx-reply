@@ -1,10 +1,12 @@
 import { fetchWithTimeout } from './http';
 import type { Env } from './types';
 
-export const TASK_TITLE = '创建已完成';
-export const TASK_CONTENT = 'dsh创建完成，回复203查看链接';
+export interface TaskMessage {
+  title: string;
+  content: string;
+}
 
-export async function pushTaskCreated(env: Env, openid: string): Promise<void> {
+export async function pushTaskCreated(env: Env, openid: string, message: TaskMessage): Promise<void> {
   const base = env.WX_PUSH_URL.replace(/\/+$/, '');
   const response = await fetchWithTimeout(
     `${base}/task-created`,
@@ -16,8 +18,8 @@ export async function pushTaskCreated(env: Env, openid: string): Promise<void> {
       },
       body: JSON.stringify({
         openid,
-        title: TASK_TITLE,
-        content: TASK_CONTENT,
+        title: message.title,
+        content: message.content,
       }),
     },
     3000,

@@ -20,6 +20,15 @@ WX_PUSH_URL = "https://hpbnvpiosrzhgyxbrwpt.supabase.co/functions/v1/wx-push"
 pattern = "wx.gyegt614.top"
 custom_domain = true
 
+[durable_objects]
+bindings = [
+  { name = "TASK_SCHEDULER", class_name = "TaskScheduler" },
+]
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TaskScheduler"]
+
 [observability.logs]
 enabled = true
 invocation_logs = true

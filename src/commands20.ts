@@ -61,12 +61,28 @@ async function run202(
   }
 
   ctx.waitUntil(
-    pushTaskCreated(env, openid).catch((error) => {
+    pushTaskCreated(
+      env,
+      openid,
+      { title: '创建已完成', content: 'dsh创建完成，回复203查看链接' },
+    ).catch((error) => {
       console.error('[20xxx] supabase push failed', errorMessage(error));
     }),
   );
 
+  ctx.waitUntil(
+    scheduleReminder(env, openid).catch((error) => {
+      console.error('[20xxx] schedule reminder failed', errorMessage(error));
+    }),
+  );
+
   return '已保存 ✓';
+}
+
+async function scheduleReminder(env: Env, openid: string): Promise<void> {
+  const id = env.TASK_SCHEDULER.idFromName('dsh-task');
+  const stub = env.TASK_SCHEDULER.get(id);
+  await stub.schedule(openid);
 }
 
 async function run203(env: Env): Promise<string> {
