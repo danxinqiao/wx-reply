@@ -3,13 +3,18 @@ main = "src/index.ts"
 compatibility_date = "2026-11-12"
 
 [vars]
-PAGES_WX_URL = "https://stock.gyegt614.top/api/wx/callback"
-WX_PUSH_URL = "https://hpbnvpiosrzhgyxbrwpt.supabase.co/functions/v1/wx-push"
-UPSTASH_REDIS_REST_URL = "https://supreme-mackerel-128896.upstash.io"
-GITHUB_REPO = "danxinqiao/dsh-runner"
-WORKFLOW_ID = "dsh-agent.yml"
+# 占位 CRON_SECRET = "" 
 GITHUB_REF = "main"
+GITHUB_REPO = "danxinqiao/dsh-runner"
+# 占位 GITHUB_TOKEN_FLOW = "" 
+PAGES_WX_URL = "https://stock.gyegt614.top/api/wx/callback"
 RESERVED_30_URL = ""
+# 占位 UPSTASH_REDIS_REST_TOKEN = "" 
+UPSTASH_REDIS_REST_URL = "https://supreme-mackerel-128896.upstash.io"
+WORKFLOW_ID = "dsh-agent.yml"
+# 占位 WX_PUSH_TOKEN = "" 
+WX_PUSH_URL = "https://hpbnvpiosrzhgyxbrwpt.supabase.co/functions/v1/wx-push"
+# 占位 WX_TOKEN = "" 
 
 [[routes]]
 pattern = "wx.gyegt614.top"
