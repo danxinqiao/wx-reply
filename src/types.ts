@@ -15,7 +15,7 @@ export interface Env {
   UPSTASH_REDIS_REST_URL: string;
   UPSTASH_REDIS_REST_TOKEN: string;
 
-  FLAGS: Flagship;
+  TEST_FLAGS: Flagship;
 
   TASK_SCHEDULER: DurableObjectNamespace;
 }

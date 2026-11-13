@@ -11,13 +11,18 @@ const TOTAL_SECONDS = 5 * 60 * 60;
 
 const FLAG_KEY = 'dsh_countdown';
 
-async function readCountdownSeconds(env: Env): Promise<number> {
-  return env.FLAGS.getNumberValue(FLAG_KEY, DEFAULT_COUNTDOWN_SECONDS);
+/** Worker 侧读 flag（读失败时回退默认值）。 */
+export async function readCountdownSeconds(env: Env): Promise<number> {
+  try {
+    return await env.TEST_FLAGS.getNumberValue(FLAG_KEY, DEFAULT_COUNTDOWN_SECONDS);
+  } catch (error) {
+    console.error('[scheduler] flagship read failed, using default', errorMessage(error));
+    return DEFAULT_COUNTDOWN_SECONDS;
+  }
 }
 
-export async function buildReminderMessage(env: Env): Promise<TaskMessage> {
-  const countdown = await readCountdownSeconds(env);
-  const remainingMinutes = Math.max(0, Math.floor((TOTAL_SECONDS - countdown) / 60));
+export function buildReminderMessage(countdownSeconds: number): TaskMessage {
+  const remainingMinutes = Math.max(0, Math.floor((TOTAL_SECONDS - countdownSeconds) / 60));
   return {
     title: 'dsh剩余时间提醒',
     content: `还剩余${remainingMinutes}分钟`,
@@ -27,13 +32,13 @@ export async function buildReminderMessage(env: Env): Promise<TaskMessage> {
 interface StoredTask {
   openid: string;
   scheduledAt: number;
+  countdown: number;
 }
 
 export class TaskScheduler extends DurableObject<Env> {
-  async schedule(openid: string): Promise<void> {
-    const countdown = await readCountdownSeconds(this.env);
+  async schedule(openid: string, countdown: number): Promise<void> {
     const scheduledAt = Date.now();
-    await this.ctx.storage.put('task', { openid, scheduledAt });
+    await this.ctx.storage.put('task', { openid, scheduledAt, countdown });
     const alarmAt = scheduledAt + countdown * 1000;
     await this.ctx.storage.setAlarm(alarmAt);
     console.log('[scheduler] scheduled', { openid, countdown, scheduledAt, alarmAt });
@@ -45,7 +50,7 @@ export class TaskScheduler extends DurableObject<Env> {
     if (!task) return;
 
     try {
-      const message = await buildReminderMessage(this.env);
+      const message = buildReminderMessage(task.countdown);
       await pushTaskCreated(this.env, task.openid, message);
       console.log('[scheduler] reminder pushed', { openid: task.openid, message });
     } catch (error) {
