@@ -24,6 +24,10 @@ app_id = "6923e3f6-6566-4196-80c4-8715adcdb461"
 pattern = "wx.gyegt614.top"
 custom_domain = true
 
+[[routes]]
+pattern = "wx.danxinqiao.eu.cc"
+custom_domain = true
+
 [durable_objects]
 bindings = [
   { name = "TASK_SCHEDULER", class_name = "TaskScheduler" },
