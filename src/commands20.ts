@@ -3,7 +3,7 @@ import { dispatchWorkflow } from './github';
 import { readCountdownSeconds } from './scheduler';
 import { pushTaskCreated } from './supabase';
 import { getKey, setKey, OPENID_KEY, TASK_KEY } from './upstash';
-import type { Env } from './types';
+import type { Env, TaskSchedulerStub } from './types';
 
 export interface Handler20Input {
   env: Env;
@@ -83,7 +83,7 @@ async function run202(
 async function scheduleReminder(env: Env, openid: string): Promise<void> {
   const countdown = await readCountdownSeconds(env);
   const id = env.TASK_SCHEDULER.idFromName('dsh-task');
-  const stub = env.TASK_SCHEDULER.get(id);
+  const stub = env.TASK_SCHEDULER.get(id) as unknown as TaskSchedulerStub;
   await stub.schedule(openid, countdown);
 }
 

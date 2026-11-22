@@ -2,7 +2,7 @@
 set -euo pipefail
 
 BASE="${BASE:-https://wx.gyegt614.top}"
-TOKEN="${WX_TOKEN:?set WX_TOKEN first}"
+TOKEN="${WECHAT_TOKEN:?set WECHAT_TOKEN first}"
 OPENID="${OPENID:-oUPTI2yAIBpKK_YkxHttqSc7TYiw}"
 CONTENT="${1:?usage: send.sh <content>}"
 

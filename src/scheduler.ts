@@ -1,4 +1,5 @@
 import { DurableObject } from 'cloudflare:workers';
+import { loadConfig } from './config';
 import { errorMessage } from './http';
 import { pushTaskCreated, type TaskMessage } from './supabase';
 import type { Env } from './types';
@@ -10,11 +11,14 @@ const DEFAULT_COUNTDOWN_SECONDS = 17_100;
 const TOTAL_SECONDS = 5 * 60 * 60;
 
 const FLAG_KEY = 'dsh_countdown';
+const CONFIG_FALLBACKS = { WX_PUSH_URL: '', CRON_SECRET: '' };
 
 /** Worker 侧读 flag（读失败时回退默认值）。 */
 export async function readCountdownSeconds(env: Env): Promise<number> {
+  const flags = env.TEST_FLAGS;
+  if (!flags) return DEFAULT_COUNTDOWN_SECONDS;
   try {
-    return await env.TEST_FLAGS.getNumberValue(FLAG_KEY, DEFAULT_COUNTDOWN_SECONDS);
+    return await flags.getNumberValue(FLAG_KEY, DEFAULT_COUNTDOWN_SECONDS);
   } catch (error) {
     console.error('[scheduler] flagship read failed, using default', errorMessage(error));
     return DEFAULT_COUNTDOWN_SECONDS;
@@ -50,8 +54,9 @@ export class TaskScheduler extends DurableObject<Env> {
     if (!task) return;
 
     try {
+      const env = await loadConfig(this.env, CONFIG_FALLBACKS);
       const message = buildReminderMessage(task.countdown);
-      await pushTaskCreated(this.env, task.openid, message);
+      await pushTaskCreated(env, task.openid, message);
       console.log('[scheduler] reminder pushed', { openid: task.openid, message });
     } catch (error) {
       console.error('[scheduler] reminder push failed', errorMessage(error));

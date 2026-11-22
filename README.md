@@ -6,12 +6,25 @@
 
 | 前缀 | 处理 |
 |---|---|
-| `10xxx` | 转发 Pages `PAGES_WX_URL`（`X-Cron-Token` 鉴权） |
+| `10xxx` | 转发 Pages `PAGES_WX_URL`（签名 + `X-Cron-Token` 兼容） |
 | `20xxx` | 本地执行（201 / 202 / 203） |
 | `30xxx` | 转发 `RESERVED_30_URL`（未配置回「该指令暂未开放」） |
 | 其他 | 回提示语 |
 
 `GET /wx` 验签后原样返回 `echostr`；`POST /wx` 验签后处理消息。
+
+## 签名服务
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| `GET`/`POST` | `/sign` | 颁发签名，返回 `{ timestamp, signature }`；需 `X-Cron-Token: CRON_SECRET` |
+| `GET`/`POST` | `/verify` | 校验签名，参数 `timestamp`、`signature`（query 或 JSON body），返回 `{ valid, reason? }`；需 `X-Cron-Token: CRON_SECRET` |
+
+签名算法：`md5(毫秒时间戳 + CRON_SECRET)`，时间戳允许前后 ±60 秒。
+调用方请求其他 Worker / Pages Function 时带上 `X-Sign-Timestamp` 与 `X-Signature`；
+接收方把这两个值交给 `POST /verify` 校验。
+调用方通过 `[[services]] binding = "WX_REPLY" service = "wx-reply"` 走内部 service binding，
+不经过公网；未绑定该 binding 时才回退到 `WX_REPLY_URL`。
 
 ## 20xxx
 
@@ -32,6 +45,8 @@ src/
 ├─ index.ts       Worker 入口：GET/POST /wx、转发、回复
 ├─ wechat.ts      SHA1 验签、XML 解析、回复 XML
 ├─ route.ts       10/20/30 前缀路由
+├─ sign.ts        /sign 与 /verify：MD5 签名与时间窗校验
+├─ md5.ts         纯 JS MD5（Workers 的 Web Crypto 不支持 MD5）
 ├─ commands20.ts  20xxx：白名单 + 201/202/203
 ├─ github.ts      GitHub Actions dispatch
 ├─ upstash.ts     Upstash Redis REST 读写
@@ -53,16 +68,15 @@ GITHUB_REF  = "main"
 以下用 secret 写入（不要提交）：
 
 ```bash
-wrangler secret put WX_TOKEN
+wrangler secret put WECHAT_TOKEN
 wrangler secret put CRON_SECRET
 wrangler secret put GITHUB_TOKEN_FLOW
-wrangler secret put WX_PUSH_TOKEN
 wrangler secret put UPSTASH_REDIS_REST_URL
 wrangler secret put UPSTASH_REDIS_REST_TOKEN
 ```
 
 > `GITHUB_TOKEN_FLOW` 需要目标仓库 Actions 的 write 权限。
-> `WX_PUSH_TOKEN` 是 Supabase `validateToken` 的裸 token（不带 `Bearer `）。
+> `CRON_SECRET` 同时用于 Pages 内部接口和 wx-push 的 `validateToken`（裸 token，不带 `Bearer `）。
 > `UPSTASH_REDIS_REST_URL` 也可以放 `[vars]`，但它和 token 成对，建议都走 secret。
 
 Supabase 侧需要新增 `/wx-push/task-created` 路由（见方案 §9.8.1），模板 ID 为 `WECHAT_TEMPLATE_TASK_ID`，字段 `title` / `content`。
@@ -80,7 +94,7 @@ npx wrangler deploy
 ## 本地测试
 
 ```bash
-export WX_TOKEN='你的 WX_TOKEN'
+export WECHAT_TOKEN='你的 WECHAT_TOKEN'
 ./scripts/verify.sh hello
 ./scripts/send.sh 101
 ./scripts/send.sh '202 https://example.com/task/1'

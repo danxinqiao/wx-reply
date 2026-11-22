@@ -2,7 +2,7 @@ export const DEFAULT_TIMEOUT_MS = 4000;
 export const SHORT_TIMEOUT_MS = 2000;
 
 export async function fetchWithTimeout(
-  input: string,
+  input: string | Request,
   init: RequestInit,
   timeoutMs: number,
 ): Promise<Response> {

@@ -1,17 +1,59 @@
 import { handle20 } from './commands20';
+import { loadConfig } from './config';
 import { DEFAULT_TIMEOUT_MS, errorMessage, fetchWithTimeout, json, text, xml } from './http';
 import { classify } from './route';
 import { TaskScheduler } from './scheduler';
-import type { Env, IncomingMessage } from './types';
+import {
+  signNow,
+  signedHeaders,
+  verifySignature as verifyRequestSignature,
+} from './sign';
+import type { Env, IncomingMessage, TaskSchedulerStub } from './types';
 import { buildTextReply, parseMessage, verifySignature } from './wechat';
 
 export { TaskScheduler };
 
 const HINT = '回复 101 看涨；102 看跌；103 看平；201 dsh';
 
+const PAGES_ORIGIN = 'https://stock-assessment.pages.dev';
+const PAGES_WX_PATH = '/api/wx/callback';
+
+const CONFIG_FALLBACKS = {
+  WECHAT_TOKEN: '',
+  CRON_SECRET: '',
+  RESERVED_30_URL: '',
+  GITHUB_TOKEN_FLOW: '',
+  GITHUB_REPO: '',
+  WORKFLOW_ID: '',
+  GITHUB_REF: 'main',
+  WX_PUSH_URL: '',
+  UPSTASH_REDIS_REST_URL: '',
+  UPSTASH_REDIS_REST_TOKEN: '',
+};
+
 export default {
-  async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+  async fetch(request: Request, rawEnv: Env, ctx: ExecutionContext): Promise<Response> {
+    const env = await loadConfig(rawEnv, CONFIG_FALLBACKS);
     const url = new URL(request.url);
+
+    if (url.pathname === '/sign') {
+      if (!isSignAuthorized(request, env.CRON_SECRET)) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      return json(signNow(env.CRON_SECRET));
+    }
+
+    if (url.pathname === '/verify') {
+      if (!env.CRON_SECRET) {
+        return json({ valid: false, reason: 'not_configured' }, 500);
+      }
+      if (!isSignAuthorized(request, env.CRON_SECRET)) {
+        return json({ error: 'unauthorized' }, 401);
+      }
+      const pair = await readSignaturePair(request, url);
+      return json(verifyRequestSignature(pair.timestamp, pair.signature, env.CRON_SECRET));
+    }
+
     if (url.pathname !== '/wx' && url.pathname !== '/alarm-status') {
       return json({ error: 'not found' }, 404);
     }
@@ -20,13 +62,15 @@ export default {
     const timestamp = url.searchParams.get('timestamp');
     const nonce = url.searchParams.get('nonce');
 
-    if (!(await verifySignature(env.WX_TOKEN, signature, timestamp, nonce))) {
+    if (!(await verifySignature(env.WECHAT_TOKEN, signature, timestamp, nonce))) {
       return json({ error: 'signature mismatch' }, 403);
     }
 
     if (request.method === 'GET') {
       if (url.pathname === '/alarm-status') {
-        const stub = env.TASK_SCHEDULER.get(env.TASK_SCHEDULER.idFromName('dsh-task'));
+        const stub = env.TASK_SCHEDULER.get(
+          env.TASK_SCHEDULER.idFromName('dsh-task'),
+        ) as unknown as TaskSchedulerStub;
         const info = await stub.getAlarmInfo();
         return json({ ...info, now: Date.now() });
       }
@@ -102,7 +146,40 @@ interface ForwardReply {
 }
 
 function forward(env: Env, payload: unknown): Promise<ForwardReply> {
-  return forwardTo(env.PAGES_WX_URL, env.CRON_SECRET, payload);
+  return forwardToPages(env, payload);
+}
+
+async function forwardToPages(env: Env, payload: unknown): Promise<ForwardReply> {
+  if (!env.PAGES) {
+    console.error('[wx] pages forward skipped: PAGES service binding is missing');
+    return {};
+  }
+
+  try {
+    const response = await fetchWithTimeout(
+      new Request(`${PAGES_ORIGIN}${PAGES_WX_PATH}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Cron-Token': env.CRON_SECRET,
+          ...signedHeaders(env.CRON_SECRET),
+        },
+        body: JSON.stringify(payload),
+      }),
+      {},
+      DEFAULT_TIMEOUT_MS,
+    );
+
+    if (!response.ok) {
+      console.error(`[wx] pages forward http ${response.status}`);
+      return {};
+    }
+
+    return (await response.json().catch(() => ({}))) as ForwardReply;
+  } catch (error) {
+    console.error('[wx] pages forward failed', errorMessage(error));
+    return {};
+  }
 }
 
 async function forwardTo(target: string, token: string, payload: unknown): Promise<ForwardReply> {
@@ -113,6 +190,7 @@ async function forwardTo(target: string, token: string, payload: unknown): Promi
       headers: {
         'Content-Type': 'application/json',
         'X-Cron-Token': token,
+        ...signedHeaders(token),
       },
       body: JSON.stringify(payload),
     },
@@ -126,4 +204,28 @@ async function forwardTo(target: string, token: string, payload: unknown): Promi
 function replyOrSuccess(message: IncomingMessage, reply: string | null | undefined): Response {
   if (!reply) return text('success');
   return xml(buildTextReply(message.fromUser, message.toUser, reply));
+}
+
+function isSignAuthorized(request: Request, secret: string): boolean {
+  if (!secret) return false;
+  const token = request.headers.get('X-Cron-Token') ?? request.headers.get('Authorization') ?? '';
+  return token === secret;
+}
+
+async function readSignaturePair(
+  request: Request,
+  url: URL,
+): Promise<{ timestamp: string; signature: string }> {
+  let timestamp = url.searchParams.get('timestamp') ?? '';
+  let signature = url.searchParams.get('signature') ?? '';
+  if ((!timestamp || !signature) && request.method !== 'GET') {
+    try {
+      const body = (await request.json()) as { timestamp?: unknown; signature?: unknown };
+      if (!timestamp && typeof body.timestamp === 'string') timestamp = body.timestamp;
+      if (!signature && typeof body.signature === 'string') signature = body.signature;
+    } catch {
+      // ignore a malformed or empty body
+    }
+  }
+  return { timestamp, signature };
 }

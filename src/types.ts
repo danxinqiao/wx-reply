@@ -1,7 +1,9 @@
+import type { FlagshipBinding } from './config';
+
 export interface Env {
-  WX_TOKEN: string;
+  WECHAT_TOKEN: string;
   CRON_SECRET: string;
-  PAGES_WX_URL: string;
+  PAGES: Fetcher;
   RESERVED_30_URL?: string;
 
   GITHUB_TOKEN_FLOW: string;
@@ -10,14 +12,18 @@ export interface Env {
   GITHUB_REF?: string;
 
   WX_PUSH_URL: string;
-  WX_PUSH_TOKEN: string;
 
   UPSTASH_REDIS_REST_URL: string;
   UPSTASH_REDIS_REST_TOKEN: string;
 
-  TEST_FLAGS: Flagship;
+  TEST_FLAGS?: FlagshipBinding;
 
   TASK_SCHEDULER: DurableObjectNamespace;
+}
+
+export interface TaskSchedulerStub {
+  schedule(openid: string, countdown: number): Promise<void>;
+  getAlarmInfo(): Promise<{ alarmAt: number | null; hasTask: boolean }>;
 }
 
 export interface IncomingMessage {

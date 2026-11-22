@@ -1,4 +1,5 @@
 import { fetchWithTimeout } from './http';
+import { signedHeaders } from './sign';
 import type { Env } from './types';
 
 export interface TaskMessage {
@@ -14,7 +15,7 @@ export async function pushTaskCreated(env: Env, openid: string, message: TaskMes
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: env.WX_PUSH_TOKEN,
+        ...signedHeaders(env.CRON_SECRET),
       },
       body: JSON.stringify({
         openid,
