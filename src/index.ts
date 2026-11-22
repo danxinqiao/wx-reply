@@ -15,12 +15,10 @@ export { TaskScheduler };
 
 const HINT = '回复 101 看涨；102 看跌；103 看平；201 dsh';
 
-const PAGES_ORIGIN = 'https://stock-assessment.pages.dev';
-const PAGES_WX_PATH = '/api/wx/callback';
-
 const CONFIG_FALLBACKS = {
   WECHAT_TOKEN: '',
   CRON_SECRET: '',
+  PAGES_WX_URL: '',
   RESERVED_30_URL: '',
   GITHUB_TOKEN_FLOW: '',
   GITHUB_REPO: '',
@@ -146,40 +144,7 @@ interface ForwardReply {
 }
 
 function forward(env: Env, payload: unknown): Promise<ForwardReply> {
-  return forwardToPages(env, payload);
-}
-
-async function forwardToPages(env: Env, payload: unknown): Promise<ForwardReply> {
-  if (!env.PAGES) {
-    console.error('[wx] pages forward skipped: PAGES service binding is missing');
-    return {};
-  }
-
-  try {
-    const response = await fetchWithTimeout(
-      new Request(`${PAGES_ORIGIN}${PAGES_WX_PATH}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Cron-Token': env.CRON_SECRET,
-          ...signedHeaders(env.CRON_SECRET),
-        },
-        body: JSON.stringify(payload),
-      }),
-      {},
-      DEFAULT_TIMEOUT_MS,
-    );
-
-    if (!response.ok) {
-      console.error(`[wx] pages forward http ${response.status}`);
-      return {};
-    }
-
-    return (await response.json().catch(() => ({}))) as ForwardReply;
-  } catch (error) {
-    console.error('[wx] pages forward failed', errorMessage(error));
-    return {};
-  }
+  return forwardTo(env.PAGES_WX_URL, env.CRON_SECRET, payload);
 }
 
 async function forwardTo(target: string, token: string, payload: unknown): Promise<ForwardReply> {

@@ -3,7 +3,7 @@ import type { FlagshipBinding } from './config';
 export interface Env {
   WECHAT_TOKEN: string;
   CRON_SECRET: string;
-  PAGES: Fetcher;
+  PAGES_WX_URL: string;
   RESERVED_30_URL?: string;
 
   GITHUB_TOKEN_FLOW: string;
