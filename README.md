@@ -6,7 +6,7 @@
 
 | 前缀 | 处理 |
 |---|---|
-| `10xxx` | 转发 Pages `PAGES_WX_URL`（签名 + `X-Cron-Token` 兼容） |
+| `10xxx` | 转发 Pages `PAGES_WX_URL`（仅签名） |
 | `20xxx` | 本地执行（201 / 202 / 203） |
 | `30xxx` | 转发 `RESERVED_30_URL`（未配置回「该指令暂未开放」） |
 | 其他 | 回提示语 |
@@ -76,7 +76,7 @@ wrangler secret put UPSTASH_REDIS_REST_TOKEN
 ```
 
 > `GITHUB_TOKEN_FLOW` 需要目标仓库 Actions 的 write 权限。
-> `CRON_SECRET` 同时用于 Pages 内部接口和 wx-push 的 `validateToken`（裸 token，不带 `Bearer `）。
+> `CRON_SECRET` 同时用于 `/sign`、`/verify` 与所有签名校验。
 > `UPSTASH_REDIS_REST_URL` 也可以放 `[vars]`，但它和 token 成对，建议都走 secret。
 
 Supabase 侧需要新增 `/wx-push/task-created` 路由（见方案 §9.8.1），模板 ID 为 `WECHAT_TEMPLATE_TASK_ID`，字段 `title` / `content`。

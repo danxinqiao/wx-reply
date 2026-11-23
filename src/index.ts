@@ -154,7 +154,6 @@ async function forwardTo(target: string, token: string, payload: unknown): Promi
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Cron-Token': token,
         ...signedHeaders(token),
       },
       body: JSON.stringify(payload),
